@@ -1,0 +1,28 @@
+
+(reset-globals
+ (assoc-globals (get-globals)
+   :fae.stdlib/def (fexpr def [sym val]
+                          (reset-globals
+                           (assoc-globals (get-globals)
+                                          sym
+                                          (eval val))))))
+
+(def first (fn first [lst]
+             (if lst
+               (:vm.list/head lst)
+               :vm.list/!end-of-list)))
+
+(def fnext (fn second [lst]
+              (first (next lst))))
+
+(def ffirst (fn ffirst [lst]
+              (first (first lst))))
+
+(def next (fn next [lst]
+            (if lst
+              (:vm.list/next lst)
+              :vm.list/!end-of-list)))
+
+
+(def let (fexpr let [binds body]
+                (eval body (assoc-locals *locals* (first binds) (eval (fnext binds))))))
