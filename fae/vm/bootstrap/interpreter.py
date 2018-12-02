@@ -50,8 +50,20 @@ class EvalInner(Fn):
     def __init__(self):
         super(EvalInner, self).__init__()
 
-    def _invoke(self, state, params):
+    def _invoke(self, (globals, locals, handlers), params):
         form = params[0]
+
+        argc = len(params)
+        if argc >= 2:
+            locals = params[1]
+
+        if argc >= 3:
+            globals = params[2]
+
+        if argc >= 4:
+            handlers = params[3]
+
+        state = (globals, locals, handlers)
 
         if form.has_attr(fae_symbol_value):
             return self.lookup_symbol(state, form.get_attr(fae_symbol_kw))
@@ -59,6 +71,10 @@ class EvalInner(Fn):
             return form
         elif form.has_attr(list_head):
             return self._eval_list(state, form)
+        else:
+            return form
+
+        assert False
 
     def lookup_symbol(self, (globals, locals, handlers), sym):
         while locals.has_attr(locals_sym):
@@ -102,8 +118,8 @@ class EvalInner(Fn):
 class InterpretedFexpr(Fexpr):
     _immutable_ = True
 
-    globals_sym = kw("*locals*")
-    locals_sym = kw("*globals*")
+    globals_sym = kw("*globals*")
+    locals_sym = kw("*locals*")
     handlers_sym = kw("*handlers*")
 
     def __init__(self, name, args, body):
@@ -113,13 +129,13 @@ class InterpretedFexpr(Fexpr):
         self._fn_body = body
 
     def _invoke(self, (globals, locals, handlers), params):
-        locals = add_local(eol, InterpretedFexpr.globals_sym, globals)
-        locals = add_local(locals, InterpretedFexpr.handlers_sym, handlers)
-        locals = add_local(locals, InterpretedFexpr.locals_sym, locals)
+        new_l = add_local(eol, InterpretedFexpr.globals_sym, globals)
+        new_l = add_local(new_l, InterpretedFexpr.handlers_sym, handlers)
+        new_l = add_local(new_l, InterpretedFexpr.locals_sym, locals)
 
         for idx in range(len(self._fn_args)):
-            locals = add_local(locals, self._fn_args[idx], params[idx])
-        return eval((globals, locals, handlers), self._fn_body)
+            new_l = add_local(new_l, self._fn_args[idx], params[idx])
+        return eval((globals, new_l, handlers), self._fn_body)
 
 def add_local(prev, sym, val):
     return EMPTY.assoc(list_tail, prev,

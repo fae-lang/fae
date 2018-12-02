@@ -26,7 +26,7 @@
 
 (def let (fexpr let [binds body]
                 (eval body {:fae.list/tail *locals*
-                            :fae.locals/sym (first binds)
+                            :fae.locals/symbol (:fae.symbol/kw (first binds))
                             :fae.locals/value (eval (fnext binds))})))
 
 (let [x 42]
