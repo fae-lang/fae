@@ -4,13 +4,13 @@
    :fae.stdlib/def (fexpr def [sym val]
                           (reset-globals
                            (assoc-globals (get-globals)
-                                          sym
+                                          (keyword :fae.stdlib (:fae.symbol/kw sym))
                                           (eval val))))))
 
 (def first (fn first [lst]
              (if lst
-               (:vm.list/head lst)
-               :vm.list/!end-of-list)))
+               (:fae.list/head lst)
+               :fae.list/!end-of-list)))
 
 (def fnext (fn second [lst]
               (first (next lst))))
@@ -20,9 +20,14 @@
 
 (def next (fn next [lst]
             (if lst
-              (:vm.list/next lst)
-              :vm.list/!end-of-list)))
+              (:fae.list/tail lst)
+              :fae.list/!end-of-list)))
 
 
 (def let (fexpr let [binds body]
-                (eval body (assoc-locals *locals* (first binds) (eval (fnext binds))))))
+                (eval body {:fae.list/tail *locals*
+                            :fae.locals/sym (first binds)
+                            :fae.locals/value (eval (fnext binds))})))
+
+(let [x 42]
+  x)

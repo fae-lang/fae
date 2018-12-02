@@ -64,7 +64,7 @@ class Value(object):
         return self.__repr__()
 
     def _invoke(self, state, params):
-        pass
+        raise NotImplemented
 
 
 class Shape(object):
@@ -170,7 +170,7 @@ class GenericShape(Shape):
 
 @not_rpython
 def shape_for_attrs(klass, kw_map):
-    getters = {attr(k): make_getter(klass, attr(k), v) for k, v in kw_map.items()}
+    getters = {kw(k): make_getter(klass, kw(k), v) for k, v in kw_map.items()}
 
     return GenericShape(getters)
 
@@ -178,12 +178,11 @@ def shape_for_attrs(klass, kw_map):
 class Keyword(Value):
     _immutable_ = True
 
-    def __init__(self, ns, name, str_name, is_attr=False):
+    def __init__(self, ns, name, str_name):
         super(Keyword, self).__init__()
         self._ns_str = ns
         self._name_str = name
         self._str_name = str_name
-        self._is_attr = is_attr
         self._is_falsey = name.startswith(u"!")
 
         if ns:
@@ -194,17 +193,14 @@ class Keyword(Value):
             self._name_kw = self
 
     def get_shape(self):
-        if self._is_attr:
-            return Keyword._attr_shape
+        if self._is_falsey:
+            return Keyword._falsey_shape
         else:
-            if self._is_falsey:
-                return Keyword._falsey_shape
-            else:
-                return Keyword._truthy_shape
+            return Keyword._truthy_shape
 
     @not_rpython
     def py_name(self):
-        return self._str_name.replace('.', '_').replace('/', '_')
+        return self._str_name.replace('.', '_').replace('/', '_').replace(':', '_')
 
     def str_name(self):
         return self._str_name
@@ -218,13 +214,21 @@ class Keyword(Value):
     def name_kw(self):
         return self._name_kw
 
+    def _invoke(self, state, params):
+        assert 1 <= len(params) <= 2
+        if len(params) == 1:
+            return params[0].get_attr(self)
+        else:
+            return params[0].get_attr(self, params[1])
+
+
+
 
 
 
 class KeywordRegistry(object):
     def __init__(self, is_attr_registry):
         self._registry = {}
-        self._is_attr_registry = is_attr_registry
 
     def intern(self, full_name):
         if isinstance(full_name, str):
@@ -242,28 +246,23 @@ class KeywordRegistry(object):
             name = full_name[offset + 1:]
             ns = full_name[:offset]
 
-        str_name = (u"." if self._is_attr_registry else u":") + full_name
+        str_name = u":" + full_name
 
         found = self._registry.get(str_name, None)
         if found is not None:
             self._registry[full_name] = found
             return found
 
-        found = Keyword(ns, name, str_name, self._is_attr_registry)
+        found = Keyword(ns, name, str_name)
         self._registry[str_name] = found
         self._registry[full_name] = found
 
         return found
 
-attr_registry = KeywordRegistry(True)
 keyword_registry = KeywordRegistry(False)
 
 def kw(s):
     return keyword_registry.intern(s)
-
-def attr(s):
-    return attr_registry.intern(s)
-
 
 class Symbol(Value):
     _immutable_ = True
@@ -303,7 +302,7 @@ Keyword._truthy_shape = shape_for_attrs("Keyword", {"fae.keyword/value": "this"}
 Keyword._falsey_shape = shape_for_attrs("Keyword", {"fae.keyword/value": "this", "fae.conditional/else": "_else_kw"})
 Keyword._else_kw = kw("fae.conditional/else")
 
-fae_conditional_else = attr("fae.conditional/else")
+fae_conditional_else = kw("fae.conditional/else")
 
 eol = kw(u"fae.list/!end-of-list")
 
@@ -343,6 +342,9 @@ class Integer(Value):
     def __init__(self, i_val):
         super(Integer, self).__init__()
         self._i_val = i_val
+
+    def __str__(self):
+        return str(self._i_val)
 
     def get_shape(self):
         return Integer._shape

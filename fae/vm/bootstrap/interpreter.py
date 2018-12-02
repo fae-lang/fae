@@ -1,11 +1,11 @@
 from fae.vm.effects import Effect
-from fae.vm.stdlib_fns import ResetGlobals, AssocGlobals, GetGlobals, MakeFexpr, MakeFn
-from fae.vm.values import kw, Fn, Value, shape_for_attrs, Keyword, list_head, list_tail, eol, sized_size, attr, Fexpr, \
-    from_list, EMPTY
+from fae.vm.stdlib_fns import ResetGlobals, AssocGlobals, GetGlobals, MakeFexpr, MakeFn, KeywordFn, StructFn, IfFn
+from fae.vm.values import kw, Fn, Value, shape_for_attrs, Keyword, list_head, list_tail, eol, sized_size, kw, Fexpr, \
+    from_list, EMPTY, symbol
 
 fae_stdlib_eval = kw("fae.stdlib/eval")
-fae_symbol_value = attr("fae.symbol/value")
-fae_keyword_value = attr("fae.keyword/value")
+fae_symbol_value = kw("fae.symbol/value")
+fae_keyword_value = kw("fae.keyword/value")
 
 class Globals(Value):
     _shape = shape_for_attrs("Globals", {"fae.globals/value": "this"})
@@ -30,31 +30,21 @@ class Globals(Value):
         assert value
         return value
 
-        # namespace = self._ns_registry.get(ns, None)
-        # if namespace is None:
-        #     return None
-        #
-        # return namespace.get(name, None)
-
     def add_global(self, kw, value):
         registry = self._ns_registry.copy()
         registry[kw] = value
         return Globals(registry)
-        # assert kw.ns_kw()
-        # cloned = self._ns_registry.copy()
-        # ns = cloned[kw.ns_kw()].copy()
-        # ns[kw.name_kw()] = value
-        # cloned[kw.ns_kw()] = ns
-        # return Globals(cloned)
+
 
 
 def eval((globals, locals, handlers), form):
+    print(form)
     return globals.get_global(fae_stdlib_eval).invoke((globals, locals, handlers), form)
 
 
 locals_sym = kw("fae.locals/symbol")
 locals_val = kw("fae.locals/value")
-fae_symbol_kw = attr("fae.symbol/kw")
+fae_symbol_kw = kw("fae.symbol/kw")
 
 class EvalInner(Fn):
     def __init__(self):
@@ -72,6 +62,7 @@ class EvalInner(Fn):
 
     def lookup_symbol(self, (globals, locals, handlers), sym):
         while locals.has_attr(locals_sym):
+            print(locals.get_attr(locals_sym), sym, locals.get_attr(locals_sym) is sym, locals.get_attr(locals_val))
             if locals.get_attr(locals_sym) is sym:
                 return locals.get_attr(locals_val)
             locals = locals.get_attr(list_tail)
@@ -96,7 +87,8 @@ class EvalInner(Fn):
             results = []
 
         while form.is_truthy():
-            result = eval(state, form.get_attr(list_head))
+            eform = form.get_attr(list_head)
+            result = eval(state, eform)
             assert result
             results[idx] = result
             form = form.get_attr(list_tail)
@@ -110,6 +102,10 @@ class EvalInner(Fn):
 class InterpretedFexpr(Fexpr):
     _immutable_ = True
 
+    globals_sym = kw("*locals*")
+    locals_sym = kw("*globals*")
+    handlers_sym = kw("*handlers*")
+
     def __init__(self, name, args, body):
         super(InterpretedFexpr, self).__init__()
         self._fn_name = name
@@ -117,13 +113,18 @@ class InterpretedFexpr(Fexpr):
         self._fn_body = body
 
     def _invoke(self, (globals, locals, handlers), params):
-        locals = eol
-        for idx in range(len(self._fn_args)):
-            locals = EMPTY.assoc(list_tail, locals,
-                                 locals_sym, self._fn_args[idx],
-                                 locals_val, params[idx])
+        locals = add_local(eol, InterpretedFexpr.globals_sym, globals)
+        locals = add_local(locals, InterpretedFexpr.handlers_sym, handlers)
+        locals = add_local(locals, InterpretedFexpr.locals_sym, locals)
 
+        for idx in range(len(self._fn_args)):
+            locals = add_local(locals, self._fn_args[idx], params[idx])
         return eval((globals, locals, handlers), self._fn_body)
+
+def add_local(prev, sym, val):
+    return EMPTY.assoc(list_tail, prev,
+                         locals_sym, sym,
+                         locals_val, val)
 
 
 class InterpretedFn(Fn):
@@ -151,6 +152,7 @@ class Evaluator(object):
         self._globals = default_globals
 
     def top_eval(self, form):
+        print(list(self._globals._ns_registry))
         try:
             return eval((self._globals, eol, None), form)
         except Effect as eff:
@@ -173,4 +175,7 @@ default_globals = Globals({}) \
                   .add_global(kw("fae.stdlib/assoc-globals"), AssocGlobals()) \
                   .add_global(kw("fae.stdlib/get-globals"), GetGlobals()) \
                   .add_global(kw("fae.stdlib/fexpr"), MakeFexpr()) \
-                  .add_global(kw("fae.stdlib/fn"), MakeFn())
+                  .add_global(kw("fae.stdlib/fn"), MakeFn()) \
+                  .add_global(kw("fae.stdlib/keyword"), KeywordFn()) \
+                  .add_global(kw("fae.stdlib/struct"), StructFn()) \
+                  .add_global(kw("fae.stdlib/if"), IfFn())

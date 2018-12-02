@@ -11,7 +11,7 @@ def bootstrap():
 
     parsed = reader.read_from_string(stdlib_str)
     for form in parsed:
-        print("NEXT")
+        print(form)
         e.top_eval(form)
 
 def main():

@@ -1,5 +1,5 @@
 from fae.vm.effects import Effect, IDENTITY_K
-from fae.vm.values import Fn, Fexpr, from_list, attr
+from fae.vm.values import Fn, Fexpr, from_list, kw, Keyword, kw, EMPTY
 
 
 class ResetGlobals(Fn):
@@ -33,7 +33,7 @@ class GetGlobals(Fn):
         return globals
 
 
-fae_symbol_kw = attr("fae.symbol/kw")
+fae_symbol_kw = kw("fae.symbol/kw")
 
 
 class MakeFexpr(Fexpr):
@@ -60,3 +60,36 @@ class MakeFn(Fexpr):
         arg_list = list(arg.get_attr(fae_symbol_kw) for arg in from_list(args))
 
         return InterpretedFn(name, arg_list, body)
+
+
+class KeywordFn(Fn):
+    def __init__(self):
+        super(KeywordFn, self).__init__()
+
+    def _invoke(self, state, params):
+        ns, name = params
+
+        assert isinstance(ns, Keyword)
+        assert isinstance(name, Keyword)
+
+        return kw(ns._name_str + u"/" + name._name_str)
+
+class StructFn(Fn):
+    def __init__(self):
+        super(StructFn, self).__init__()
+
+    def _invoke(self, state, params):
+        return EMPTY.assoc(*params)
+
+class IfFn(Fexpr):
+    def __init__(self):
+        super(IfFn, self).__init__()
+
+    def _invoke(self, state, params):
+        from fae.vm.bootstrap.interpreter import eval
+
+        result = eval(state, params[0])
+        if result.is_truthy():
+            return eval(state, params[1])
+        else:
+            return eval(state, params[2])

@@ -11,6 +11,7 @@ parser = Lark("""
   ?values: value*
   ?value: list
        | vector
+       | struct
        | STRING -> string
        | NUMBER -> number
        | KEYWORD -> keyword
@@ -19,6 +20,7 @@ parser = Lark("""
        | "true" | "false"
 
   list: "(" value* ")"
+  struct: "{" (value value)* "}"
   vector: "[" value* "]"
   NUMBER: SIGNED_NUMBER
   STRING: ESCAPED_STRING
@@ -65,6 +67,9 @@ class ToLisp(Transformer):
 
     def quoted(self, (val, )):
         return base.from_list([ToLisp.vm_quote, val])
+
+    def struct(selfs, itms):
+        return values.to_list([values.symbol("fae.stdlib/struct")] + itms)
 
 
 def read_from_string(s):
