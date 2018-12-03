@@ -35,10 +35,32 @@ class Globals(Value):
         return Globals(registry)
 
 
-
 def eval((globals, locals, handlers), form):
     print(form)
     return globals.get_global(fae_stdlib_eval).invoke((globals, locals, handlers), form)
+
+
+class TailCall(BaseException):
+    def __init__(self, f, state, args):
+        self._f = f
+        self._state = state
+        self._args = args
+
+    def resume(self):
+        return self._f.invoke(self._state, *self._args)
+
+
+def eval_notail(state, form):
+    try:
+        return eval(state, form)
+    except TailCall as tc:
+        while True:
+            try:
+                return tc.resume()
+            except TailCall as tc:
+                continue
+
+
 
 
 locals_sym = kw("fae.locals/symbol")
@@ -103,13 +125,13 @@ class EvalInner(Fn):
 
         while form.is_truthy():
             eform = form.get_attr(list_head)
-            result = eval(state, eform)
+            result = eval_notail(state, eform)
             assert result
             results[idx] = result
             form = form.get_attr(list_tail)
             idx += 1
 
-        return fn.invoke(state, *results)
+        raise TailCall(fn, state, results)
 
 
 
@@ -169,7 +191,7 @@ class Evaluator(object):
     def top_eval(self, form):
         print(list(self._globals._ns_registry))
         try:
-            return eval((self._globals, eol, None), form)
+            return eval_notail((self._globals, eol, None), form)
         except Effect as eff:
             while True:
                 assert isinstance(eff._value, Globals)

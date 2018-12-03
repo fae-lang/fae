@@ -105,9 +105,9 @@ class IfFn(Fexpr):
         super(IfFn, self).__init__()
 
     def _invoke(self, state, params):
-        from fae.vm.bootstrap.interpreter import eval
+        from fae.vm.bootstrap.interpreter import eval, eval_notail
 
-        result = eval(state, params[0])
+        result = eval_notail(state, params[0])
         if result.is_truthy():
             return eval(state, params[1])
         else:
