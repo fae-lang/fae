@@ -1,5 +1,4 @@
 from fae.vm.effects import Effect
-from fae.vm.stdlib_fns import ResetGlobals, AssocGlobals, GetGlobals, MakeFexpr, MakeFn, KeywordFn, StructFn, IfFn
 from fae.vm.values import kw, Fn, Value, shape_for_attrs, Keyword, list_head, list_tail, eol, sized_size, kw, Fexpr, \
     from_list, EMPTY, symbol
 
@@ -183,15 +182,9 @@ class Evaluator(object):
 
 
 
+import fae.vm.stdlib_fns as stdlib_fns
 
+default_globals = Globals({}).add_global(fae_stdlib_eval, EvalInner())
 
-default_globals = Globals({}) \
-                  .add_global(fae_stdlib_eval, EvalInner()) \
-                  .add_global(kw("fae.stdlib/reset-globals"), ResetGlobals()) \
-                  .add_global(kw("fae.stdlib/assoc-globals"), AssocGlobals()) \
-                  .add_global(kw("fae.stdlib/get-globals"), GetGlobals()) \
-                  .add_global(kw("fae.stdlib/fexpr"), MakeFexpr()) \
-                  .add_global(kw("fae.stdlib/fn"), MakeFn()) \
-                  .add_global(kw("fae.stdlib/keyword"), KeywordFn()) \
-                  .add_global(kw("fae.stdlib/struct"), StructFn()) \
-                  .add_global(kw("fae.stdlib/if"), IfFn())
+for k, v in stdlib_fns.fn_registry.items():
+    default_globals = default_globals.add_global(k, getattr(stdlib_fns, v)())

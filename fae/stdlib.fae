@@ -29,5 +29,9 @@
                             :fae.locals/symbol (:fae.symbol/kw (first binds))
                             :fae.locals/value (eval (fnext binds))})))
 
-(let [x 42]
-  x)
+(def count-up (fn count-up [x max]
+                (if (int< x max)
+                  (count-up (int+ x 1) max)
+                  x)))
+
+(count-up 0 1000)

@@ -26,7 +26,7 @@ parser = Lark("""
   STRING: ESCAPED_STRING
   KEYWORD: ":" SYMBOL
   quoted: "'" value
-  SYMBOL: /[a-zA-Z\*\.\!][a-zA-Z0-9\_\-\+\|\/\*\.\!]*/
+  SYMBOL: /[a-zA-Z\*\.\!\<\>][a-zA-Z0-9\_\-\+\|\/\*\.\!\<\>]*/
 
   %import common.ESCAPED_STRING
   %import common.SIGNED_NUMBER
