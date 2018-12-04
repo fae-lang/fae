@@ -34,4 +34,4 @@
                   (count-up (int+ x 1) max)
                   x)))
 
-(count-up 0 1000)
+(count-up 0 *input*)

@@ -41,9 +41,25 @@ class Value(object):
     def invoke(self, state, *args):
         return self._invoke(state, list(args))
 
+    def invoke_all(self, state, args):
+        assert isinstance(args, list)
+        return self._invoke(state, args)
 
     @specialize.call_location()
     def assoc(self, *kws):
+        kws = list(kws)
+        new_dict = {}
+        shape = self.get_shape()
+
+        for k in shape.attr_list():
+            new_dict[k] = shape.getter_for(k).get_value(self)
+
+        for idx in range(0, len(kws), 2):
+            new_dict[kws[idx]] = kws[idx + 1]
+
+        return DictStruct(new_dict)
+
+    def assoc_all(self, kws):
         #keys = list(unrolling_iterable(skipping_iterator(kws)))
         #vals = list(unrolling_iterable(skipping_iterator(kws, True)))
 
@@ -64,10 +80,12 @@ class Value(object):
         return self.__repr__()
 
     def _invoke(self, state, params):
-        raise NotImplemented
+        assert False
 
 
 class Shape(object):
+    _immutable_ = True
+
     def __init__(self):
         pass
 
@@ -75,6 +93,8 @@ class Shape(object):
         pass
 
 class Getter(object):
+    _immutable_ = True
+
     def __init__(self):
         pass
 
@@ -83,8 +103,10 @@ class Getter(object):
 
 
 class DictStruct(Value):
+    _immutable_ = True
+
     def __init__(self, kvs):
-        super(DictStruct, self).__init__()
+        Value.__init__(self)
         self._shape = DictShape(kvs)
 
     def get_shape(self):
@@ -104,8 +126,10 @@ class DictStruct(Value):
 
 
 class DictGetter(Getter):
+    _immutable_ = True
+
     def __init__(self, k):
-        super(DictGetter, self).__init__()
+        Getter.__init__(self)
         self._k = k
 
     def get_value(self, inst):
@@ -114,8 +138,10 @@ class DictGetter(Getter):
 
 
 class DictShape(Shape):
+    _immutable_ = True
+
     def __init__(self, kvs):
-        super(DictShape, self).__init__()
+        Shape.__init__(self)
         self._kvs = kvs
 
     def getter_for(self, k):
@@ -132,8 +158,10 @@ def make_getter(klass, kw, attr):
     if attr == "this":
         template = """
         class {klass}{kw}Getter(Getter):
+            _immutable_ = True
+
             def __init__(self):
-                super(Getter, self).__init__()
+                Getter.__init__(self)
 
             def get_value(self, inst):
                 assert isinstance(inst, {klass})
@@ -142,8 +170,10 @@ def make_getter(klass, kw, attr):
     else:
         template = """
         class {klass}{kw}Getter(Getter):
+            _immutable_ = True
+
             def __init__(self):
-                super(Getter, self).__init__()
+                Getter.__init__(self)
 
             def get_value(self, inst):
                 assert isinstance(inst, {klass})
@@ -156,8 +186,10 @@ def make_getter(klass, kw, attr):
 
 
 class GenericShape(Shape):
+    _immutable_ = True
+
     def __init__(self, attr_map):
-        super(GenericShape, self).__init__()
+        Shape.__init__(self)
         self._attr_map = attr_map
 
     def attr_list(self):
@@ -179,7 +211,7 @@ class Keyword(Value):
     _immutable_ = True
 
     def __init__(self, ns, name, str_name):
-        super(Keyword, self).__init__()
+        Value.__init__(self)
         self._ns_str = ns
         self._name_str = name
         self._str_name = str_name
@@ -189,7 +221,7 @@ class Keyword(Value):
             self._ns_kw = kw(ns)
             self._name_kw = kw(name)
         else:
-            self._ns_kw = ns
+            self._ns_kw = None
             self._name_kw = self
 
     def get_shape(self):
@@ -243,6 +275,7 @@ class KeywordRegistry(object):
             name = full_name
             ns = None
         else:
+            assert offset >= 0
             name = full_name[offset + 1:]
             ns = full_name[:offset]
 
@@ -261,7 +294,10 @@ class KeywordRegistry(object):
 
 keyword_registry = KeywordRegistry(False)
 
+@specialize.argtype(0)
 def kw(s):
+    if isinstance(s, str):
+        s = unicode(s)
     return keyword_registry.intern(s)
 
 class Symbol(Value):
@@ -270,7 +306,7 @@ class Symbol(Value):
                                         "fae.symbol/kw": "_kw"})
 
     def __init__(self, kw):
-        super(Symbol, self).__init__()
+        Value.__init__(self)
         self._kw = kw
 
     def __repr__(self):
@@ -290,7 +326,8 @@ class EmptyStruct(Value):
     _shape = shape_for_attrs("EmptyStruct", {})
 
     def __init__(self):
-        super(EmptyStruct, self).__init__()
+        Value.__init__(self)
+
 
     def get_shape(self):
         return EmptyStruct._shape
@@ -337,10 +374,12 @@ def from_list(lst):
 
 
 class Integer(Value):
+    _immutable_ = True
+
     _shape = shape_for_attrs("Integer", {"fae.integer/value": "this"})
 
     def __init__(self, i_val):
-        super(Integer, self).__init__()
+        Value.__init__(self)
         self._i_val = i_val
 
     def __str__(self):
@@ -354,20 +393,25 @@ class Integer(Value):
 
 
 class Fn(Value):
+    _immutable_ = True
+
     _shape = shape_for_attrs("Fn", {"fae.fn/value": "this"})
 
     def __init__(self):
-        super(Fn, self).__init__()
+        Value.__init__(self)
+
 
     def get_shape(self):
         return Fn._shape
 
 
 class Fexpr(Value):
+    _immutable_ = True
+
     _shape = shape_for_attrs("Fexpr", {"fae.fexpr/value": "this"})
 
     def __init__(self):
-        super(Fexpr, self).__init__()
+        Value.__init__(self)
 
     def get_shape(self):
         return Fexpr._shape

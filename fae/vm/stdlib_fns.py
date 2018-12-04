@@ -12,8 +12,10 @@ def register(nm):
 
 @register("reset-globals")
 class ResetGlobals(Fn):
+    _immutable_ = True
+
     def __init__(self):
-        super(ResetGlobals, self).__init__()
+        Fn.__init__(self)
 
     def _invoke(self, state, params):
         globals = params[0]
@@ -22,8 +24,10 @@ class ResetGlobals(Fn):
 
 @register("assoc-globals")
 class AssocGlobals(Fn):
+    _immutable_ = True
+
     def __init__(self):
-        super(AssocGlobals, self).__init__()
+        Fn.__init__(self)
 
     def _invoke(self, state, params):
         globals = params[0]
@@ -38,8 +42,10 @@ class AssocGlobals(Fn):
 
 @register("get-globals")
 class GetGlobals(Fn):
+    _immutable_ = True
+
     def __init__(self):
-        super(GetGlobals, self).__init__()
+        Fn.__init__(self)
 
     def _invoke(self, (globals, locals, handlers), params):
         return globals
@@ -50,36 +56,47 @@ fae_symbol_kw = kw("fae.symbol/kw")
 
 @register("fexpr")
 class MakeFexpr(Fexpr):
+    _immutable_ = True
+
     def __init__(self):
-        super(MakeFexpr, self).__init__()
+        Fexpr.__init__(self)
 
     def _invoke(self, state, params):
         from fae.vm.bootstrap.interpreter import InterpretedFexpr
         name, args, body = params
 
-        arg_list = list(arg.get_attr(fae_symbol_kw) for arg in from_list(args))
+        arg_list = []
+        for arg in from_list(args):
+            arg_list.append(arg.get_attr(fae_symbol_kw))
 
         return InterpretedFexpr(name, arg_list, body)
 
 
 @register("fn")
 class MakeFn(Fexpr):
+    _immutable_ = True
+
     def __init__(self):
-        super(MakeFn, self).__init__()
+        Fexpr.__init__(self)
 
     def _invoke(self, state, params):
         from fae.vm.bootstrap.interpreter import InterpretedFn
         name, args, body = params
 
-        arg_list = list(arg.get_attr(fae_symbol_kw) for arg in from_list(args))
+        arg_list = []
+
+        for arg in from_list(args):
+            arg_list.append(arg.get_attr(fae_symbol_kw))
 
         return InterpretedFn(name, arg_list, body)
 
 
 @register("keyword")
 class KeywordFn(Fn):
+    _immutable_ = True
+
     def __init__(self):
-        super(KeywordFn, self).__init__()
+        Fn.__init__(self)
 
     def _invoke(self, state, params):
         ns, name = params
@@ -92,17 +109,21 @@ class KeywordFn(Fn):
 
 @register("struct")
 class StructFn(Fn):
+    _immutable_ = True
+
     def __init__(self):
-        super(StructFn, self).__init__()
+        Fn.__init__(self)
 
     def _invoke(self, state, params):
-        return EMPTY.assoc(*params)
+        return EMPTY.assoc_all(params)
 
 
 @register("if")
 class IfFn(Fexpr):
+    _immutable_ = True
+
     def __init__(self):
-        super(IfFn, self).__init__()
+        Fexpr.__init__(self)
 
     def _invoke(self, state, params):
         from fae.vm.bootstrap.interpreter import eval, eval_notail
@@ -116,11 +137,13 @@ class IfFn(Fexpr):
 
 @register("int<")
 class IntLessThan(Fn):
+    _immutable_ = True
+
     kw_less_than = kw("fae.int.compare/less-than")
     kw_not_less_than = kw("fae.int.compare/!less-than")
 
     def __init__(self):
-        super(IntLessThan, self).__init__()
+        Fn.__init__(self)
 
     def _invoke(self, state, params):
         if params[0].unwrap_int() < params[1].unwrap_int():
@@ -131,8 +154,10 @@ class IntLessThan(Fn):
 
 @register("int+")
 class IntAdd(Fn):
+    _immutable_ = True
+
     def __init__(self):
-        super(IntAdd, self).__init__()
+        Fn.__init__(self)
 
     def _invoke(self, state, params):
         return Integer(params[0].unwrap_int() + params[1].unwrap_int())

@@ -7,10 +7,11 @@ fae_symbol_value = kw("fae.symbol/value")
 fae_keyword_value = kw("fae.keyword/value")
 
 class Globals(Value):
+    _immutable_ = True
     _shape = shape_for_attrs("Globals", {"fae.globals/value": "this"})
 
     def __init__(self, ns_registry=None):
-        super(Globals, self).__init__()
+        Value.__init__(self)
         #self._ns_registry = ns_registry if ns_registry else {}.setdefault({}.setdefault({}))
         self._ns_registry = ns_registry if ns_registry else {}
 
@@ -21,7 +22,7 @@ class Globals(Value):
             return self._get_global(k)
             #return self._get_global(k.ns_kw(), k.name_kw())
         else:
-            full_kw = kw("fae.stdlib/"+str(k)[1:])
+            full_kw = kw(u"fae.stdlib/"+k.str_name()[1:])
             return self.get_global(full_kw)
 
     def _get_global(self, k):
@@ -40,25 +41,32 @@ def eval((globals, locals, handlers), form):
     return globals.get_global(fae_stdlib_eval).invoke((globals, locals, handlers), form)
 
 
-class TailCall(BaseException):
+class TailCall(Exception):
+    _immutable_ = True
+
     def __init__(self, f, state, args):
         self._f = f
         self._state = state
         self._args = args
 
     def resume(self):
-        return self._f.invoke(self._state, *self._args)
+        return self._f.invoke_all(self._state, self._args)
 
 
 def eval_notail(state, form):
     try:
-        return eval(state, form)
+        print("EVAL --?")
+        result = eval(state, form)
     except TailCall as tc:
+        print("Got Tail call")
         while True:
             try:
-                return tc.resume()
-            except TailCall as tc:
-                continue
+                result = tc.resume()
+                break
+            except TailCall as ex:
+                tc = ex
+
+    return result
 
 
 
@@ -68,8 +76,10 @@ locals_val = kw("fae.locals/value")
 fae_symbol_kw = kw("fae.symbol/kw")
 
 class EvalInner(Fn):
+    _immutable_ = True
+
     def __init__(self):
-        super(EvalInner, self).__init__()
+        Fn.__init__(self)
 
     def _invoke(self, (globals, locals, handlers), params):
         form = params[0]
@@ -112,11 +122,11 @@ class EvalInner(Fn):
 
     def _eval_list(self, state, form):
         idx = 0
-        fn = eval(state, form.get_attr(list_head))
+        fn = eval_notail(state, form.get_attr(list_head))
         form = form.get_attr(list_tail)
 
         if isinstance(fn, Fexpr):
-            return fn.invoke(state, *from_list(form))
+            return fn.invoke_all(state, from_list(form))
 
         if form.is_truthy():
             results = [None] * (form.get_attr(sized_size).unwrap_int())
@@ -126,11 +136,12 @@ class EvalInner(Fn):
         while form.is_truthy():
             eform = form.get_attr(list_head)
             result = eval_notail(state, eform)
-            assert result
+            assert result, "Bad Result " + str(result)
             results[idx] = result
             form = form.get_attr(list_tail)
             idx += 1
 
+        print("Throwing tail call")
         raise TailCall(fn, state, results)
 
 
@@ -144,7 +155,7 @@ class InterpretedFexpr(Fexpr):
     handlers_sym = kw("*handlers*")
 
     def __init__(self, name, args, body):
-        super(InterpretedFexpr, self).__init__()
+        Fexpr.__init__(self)
         self._fn_name = name
         self._fn_args = args
         self._fn_body = body
@@ -168,7 +179,7 @@ class InterpretedFn(Fn):
     _immutable_ = True
 
     def __init__(self, name, args, body):
-        super(InterpretedFn, self).__init__()
+        Fn.__init__(self)
         self._fn_name = name
         self._fn_args = args
         self._fn_body = body
@@ -185,6 +196,8 @@ class InterpretedFn(Fn):
 
 
 class Evaluator(object):
+    _immutable_ = True
+
     def __init__(self):
         self._globals = default_globals
 
@@ -202,6 +215,9 @@ class Evaluator(object):
                 except Effect as eff:
                     continue
 
+    def add_global(self, k, v):
+        self._globals = self._globals.add_global(kw(k), v)
+        return self
 
 
 import fae.vm.stdlib_fns as stdlib_fns

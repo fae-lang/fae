@@ -1,6 +1,6 @@
 
 
-class Effect(BaseException):
+class Effect(Exception):
     def __init__(self, value, k):
         self._value = value
         self._k = k
@@ -16,7 +16,7 @@ class IContinuation(object):
 
 class IdentityK(IContinuation):
     def __init__(self):
-        super(IdentityK, self).__init__()
+        IContinuation.__init__(self)
 
     def continuation(self, (globals, handlers), value):
         return value
