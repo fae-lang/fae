@@ -1,5 +1,6 @@
 from fae.vm.effects import Effect, IDENTITY_K
-from fae.vm.values import Fn, Fexpr, from_list, kw, Keyword, kw, EMPTY, Integer
+from fae.vm.values import Fn, Fexpr, kw, Keyword, kw, EMPTY, Integer, from_list
+from rpython.rlib import jit
 
 fn_registry = {}
 
@@ -18,7 +19,7 @@ class ResetGlobals(Fn):
         Fn.__init__(self)
 
     def _invoke(self, state, params):
-        globals = params[0]
+        globals = params.arg(0)
         raise Effect(globals, IDENTITY_K)
 
 
@@ -29,13 +30,14 @@ class AssocGlobals(Fn):
     def __init__(self):
         Fn.__init__(self)
 
+    @jit.unroll_safe
     def _invoke(self, state, params):
-        globals = params[0]
+        globals = params.arg(0)
 
         from fae.vm.bootstrap.interpreter import Globals
         assert isinstance(globals, Globals)
-        for idx in range(1, len(params), 2):
-            globals = globals.add_global(params[idx], params[idx + 1])
+        for idx in range(1, params.argc(), 2):
+            globals = globals.add_global(params.arg(idx), params.arg(idx + 1))
 
         return globals
 
@@ -63,7 +65,9 @@ class MakeFexpr(Fexpr):
 
     def _invoke(self, state, params):
         from fae.vm.bootstrap.interpreter import InterpretedFexpr
-        name, args, body = params
+        name = params.arg(0)
+        args = params.arg(1)
+        body = params.arg(2)
 
         arg_list = []
         for arg in from_list(args):
@@ -81,7 +85,9 @@ class MakeFn(Fexpr):
 
     def _invoke(self, state, params):
         from fae.vm.bootstrap.interpreter import InterpretedFn
-        name, args, body = params
+        name = params.arg(0)
+        args = params.arg(1)
+        body = params.arg(2)
 
         arg_list = []
 
@@ -99,7 +105,8 @@ class KeywordFn(Fn):
         Fn.__init__(self)
 
     def _invoke(self, state, params):
-        ns, name = params
+        ns = params.arg(0)
+        name = params.arg(1)
 
         assert isinstance(ns, Keyword)
         assert isinstance(name, Keyword)
@@ -128,11 +135,11 @@ class IfFn(Fexpr):
     def _invoke(self, state, params):
         from fae.vm.bootstrap.interpreter import eval, eval_notail
 
-        result = eval_notail(state, params[0])
+        result = eval_notail(state, params.arg(0))
         if result.is_truthy():
-            return eval(state, params[1])
+            return eval(state, params.arg(1))
         else:
-            return eval(state, params[2])
+            return eval(state, params.arg(2))
 
 
 @register("int<")
@@ -146,7 +153,7 @@ class IntLessThan(Fn):
         Fn.__init__(self)
 
     def _invoke(self, state, params):
-        if params[0].unwrap_int() < params[1].unwrap_int():
+        if params.arg(0).unwrap_int() < params.arg(1).unwrap_int():
             return IntLessThan.kw_less_than
         else:
             return IntLessThan.kw_not_less_than
@@ -160,5 +167,5 @@ class IntAdd(Fn):
         Fn.__init__(self)
 
     def _invoke(self, state, params):
-        return Integer(params[0].unwrap_int() + params[1].unwrap_int())
+        return Integer(params.arg(0).unwrap_int() + params.arg(1).unwrap_int())
 

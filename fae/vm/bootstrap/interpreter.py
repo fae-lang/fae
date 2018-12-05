@@ -1,6 +1,7 @@
 from fae.vm.effects import Effect
 from fae.vm.values import kw, Fn, Value, shape_for_attrs, Keyword, list_head, list_tail, eol, sized_size, kw, Fexpr, \
-    from_list, EMPTY, symbol
+    EMPTY, symbol, to_arglist
+from rpython.rlib import jit, debug
 
 fae_stdlib_eval = kw("fae.stdlib/eval")
 fae_symbol_value = kw("fae.symbol/value")
@@ -37,34 +38,74 @@ class Globals(Value):
 
 
 def eval((globals, locals, handlers), form):
-    print(form)
-    return globals.get_global(fae_stdlib_eval).invoke((globals, locals, handlers), form)
+    args = ArgList(1)
+    args.set_arg(0, form)
+    return globals.get_global(fae_stdlib_eval).invoke_all((globals, locals, handlers), args)
+
+
+class ArgList(object):
+    _virtualizable_ = ['_args[*]']
+
+    def __init__(self, argc):
+        assert isinstance(argc, int)
+        self = jit.hint(self, access_directly=True, fresh_virtualizable=True)
+        self._args = [None] * argc
+
+    def arg(self, idx):
+        assert 0 <= idx < len(self._args)
+        return self._args[idx]
+
+    def set_arg(self, idx, val):
+        assert 0 <= idx < len(self._args)
+        self._args[idx] = val
+
+    def argc(self):
+        return len(self._args)
+
 
 
 class TailCall(Exception):
-    _immutable_ = True
+    _virtualizable = ['_args[*]', '_f', '_globals', '_handlers']
 
     def __init__(self, f, state, args):
         self._f = f
-        self._state = state
+        self._globals, _, self._handlers = state
         self._args = args
 
-    def resume(self):
-        return self._f.invoke_all(self._state, self._args)
+    def state(self):
+        return self._f, self._globals, self._handlers, self._args
+
+    @staticmethod
+    def resume_bare(f, globals, handlers, args):
+        return f.invoke_all((globals, eol, handlers), args)
+
+
+def get_location(of, f):
+    if isinstance(f, InterpretedFn):
+        return str(f._fn_name.str_repr())
+    if isinstance(f, InterpretedFexpr):
+        return str(f._fn_name.str_repr())
+    else:
+        return str(f.str_repr())
+
+jitdriver = jit.JitDriver(greens=["of", "f"], reds=["globals", 'handlers', "args"], virtualizables=["args"], get_printable_location=get_location)
 
 
 def eval_notail(state, form):
     try:
-        print("EVAL --?")
         result = eval(state, form)
     except TailCall as tc:
-        print("Got Tail call")
+        f, globals, handlers, args = tc.state()
+        of = f
         while True:
+            jitdriver.jit_merge_point(of=of, f=f, globals=globals, handlers=handlers, args=args)
             try:
-                result = tc.resume()
+                result = TailCall.resume_bare(f, globals, handlers, args)
                 break
             except TailCall as ex:
-                tc = ex
+                f, globals, handlers, args = ex.state()
+                if f is of:
+                    jitdriver.can_enter_jit(of=of, f=f, globals=globals, handlers=handlers, args=args)
 
     return result
 
@@ -82,17 +123,17 @@ class EvalInner(Fn):
         Fn.__init__(self)
 
     def _invoke(self, (globals, locals, handlers), params):
-        form = params[0]
+        form = params.arg(0)
 
-        argc = len(params)
+        argc = params.argc()
         if argc >= 2:
-            locals = params[1]
+            locals = params.arg(1)
 
         if argc >= 3:
-            globals = params[2]
+            globals = params.arg(2)
 
         if argc >= 4:
-            handlers = params[3]
+            handlers = params.arg(3)
 
         state = (globals, locals, handlers)
 
@@ -105,11 +146,9 @@ class EvalInner(Fn):
         else:
             return form
 
-        assert False
-
+    @jit.unroll_safe
     def lookup_symbol(self, (globals, locals, handlers), sym):
         while locals.has_attr(locals_sym):
-            print(locals.get_attr(locals_sym), sym, locals.get_attr(locals_sym) is sym, locals.get_attr(locals_val))
             if locals.get_attr(locals_sym) is sym:
                 return locals.get_attr(locals_val)
             locals = locals.get_attr(list_tail)
@@ -120,28 +159,28 @@ class EvalInner(Fn):
 
         return result
 
+    @jit.unroll_safe
     def _eval_list(self, state, form):
         idx = 0
         fn = eval_notail(state, form.get_attr(list_head))
         form = form.get_attr(list_tail)
 
         if isinstance(fn, Fexpr):
-            return fn.invoke_all(state, from_list(form))
+            return fn.invoke_all(state, to_arglist(form))
 
         if form.is_truthy():
-            results = [None] * (form.get_attr(sized_size).unwrap_int())
+            results = ArgList(form.get_attr(sized_size).unwrap_int())
         else:
-            results = []
+            results = ArgList(0)
 
         while form.is_truthy():
             eform = form.get_attr(list_head)
             result = eval_notail(state, eform)
             assert result, "Bad Result " + str(result)
-            results[idx] = result
+            results.set_arg(idx, result)
             form = form.get_attr(list_tail)
             idx += 1
 
-        print("Throwing tail call")
         raise TailCall(fn, state, results)
 
 
@@ -160,14 +199,16 @@ class InterpretedFexpr(Fexpr):
         self._fn_args = args
         self._fn_body = body
 
+    @jit.unroll_safe
     def _invoke(self, (globals, locals, handlers), params):
         new_l = add_local(eol, InterpretedFexpr.globals_sym, globals)
         new_l = add_local(new_l, InterpretedFexpr.handlers_sym, handlers)
         new_l = add_local(new_l, InterpretedFexpr.locals_sym, locals)
 
-        for idx in range(len(self._fn_args)):
-            new_l = add_local(new_l, self._fn_args[idx], params[idx])
+        for idx in range(params.argc()):
+            new_l = add_local(new_l, self._fn_args[idx], params.arg(idx))
         return eval((globals, new_l, handlers), self._fn_body)
+
 
 def add_local(prev, sym, val):
     return EMPTY.assoc(list_tail, prev,
@@ -184,12 +225,13 @@ class InterpretedFn(Fn):
         self._fn_args = args
         self._fn_body = body
 
+    @jit.unroll_safe
     def _invoke(self, (globals, locals, handlers), params):
         locals = eol
         for idx in range(len(self._fn_args)):
             locals = EMPTY.assoc(list_tail, locals,
                                  locals_sym, self._fn_args[idx],
-                                 locals_val, params[idx])
+                                 locals_val, params.arg(idx))
 
         return eval((globals, locals, handlers), self._fn_body)
 
@@ -202,7 +244,6 @@ class Evaluator(object):
         self._globals = default_globals
 
     def top_eval(self, form):
-        print(list(self._globals._ns_registry))
         try:
             return eval_notail((self._globals, eol, None), form)
         except Effect as eff:

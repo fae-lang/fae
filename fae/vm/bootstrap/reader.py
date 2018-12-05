@@ -50,19 +50,15 @@ class ToLisp(Transformer):
         return values.Integer(int(n))
 
     def keyword(self, (s, )):
-        print("KEYWORD", s)
         return values.kw(str(s)[1:])
 
     def symbol(self, (s, )):
-        print("SYMBOL ", s)
         return values.symbol(str(s))
 
     def list(self, itms):
-        print("LIST", itms)
         return values.to_list(itms)
 
     def vector(self, itms):
-        print("VECTOR", itms)
         return values.to_list(itms)
 
     def quoted(self, (val, )):
@@ -73,6 +69,6 @@ class ToLisp(Transformer):
 
 
 def read_from_string(s):
+    print("Parsing bootstrap file...")
     p = parser.parse(s)
-    print(p)
     return ToLisp().transform(p)

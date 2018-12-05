@@ -1,5 +1,6 @@
 import abc
 
+from rpython.rlib import jit
 from rpython.rlib.objectmodel import not_rpython, specialize
 from rpython.tool.sourcetools import compile_template
 from rpython.rlib.unroll import unrolling_iterable
@@ -25,10 +26,11 @@ class Value(object):
             return not_found
         return getter.get_value(self)
 
+    @jit.elidable_promote()
     def has_attr(self, k):
         return self.get_shape().getter_for(k) is not None;
 
-    @abc.abstractmethod
+    @jit.elidable_promote()
     def get_shape(self):
         """Return a Shape object that defines the attributes supported on this instance.
         Note: Shapes are not RPython type specific, the same RPython type can return different
@@ -39,10 +41,12 @@ class Value(object):
         return not self.has_attr(fae_conditional_else)
 
     def invoke(self, state, *args):
-        return self._invoke(state, list(args))
+        from fae.vm.bootstrap.interpreter import ArgList
+        return self._invoke(state, ArgList(list(args)))
 
     def invoke_all(self, state, args):
-        assert isinstance(args, list)
+        from fae.vm.bootstrap.interpreter import ArgList
+        assert isinstance(args, ArgList)
         return self._invoke(state, args)
 
     @specialize.call_location()
@@ -60,24 +64,25 @@ class Value(object):
         return DictStruct(new_dict)
 
     def assoc_all(self, kws):
-        #keys = list(unrolling_iterable(skipping_iterator(kws)))
-        #vals = list(unrolling_iterable(skipping_iterator(kws, True)))
-
-        #ctor = self.get_shape().with_keys(keys)
-
         new_dict = {}
         shape = self.get_shape()
 
         for k in shape.attr_list():
             new_dict[k] = shape.getter_for(k).get_value(self)
 
-        for idx in range(0, len(kws), 2):
-            new_dict[kws[idx]] = kws[idx + 1]
+        for idx in range(0, kws.argc(), 2):
+            new_dict[kws.arg(idx)] = kws.arg(idx + 1)
 
         return DictStruct(new_dict)
 
+    def str_repr(self):
+        return u"<Opaque Type>"
+
+    def __repr__(self):
+        return self.str_repr()
+
     def __str__(self):
-        return self.__repr__()
+        return self.str_repr()
 
     def _invoke(self, state, params):
         assert False
@@ -112,17 +117,21 @@ class DictStruct(Value):
     def get_shape(self):
         return self._shape
 
-    def __repr__(self):
+    def str_repr(self):
         if self.has_attr(list_head):
             acc = []
             head = self
             while head.has_attr(list_head):
-                acc.append(str(head.get_attr(list_head)))
+                acc.append(head.get_attr(list_head).str_repr())
                 head = head.get_attr(list_tail, eol)
 
-            return u"(" +  u" ".join(acc) + u")"
+            return u"(" + u" ".join(acc) + u")"
 
-        return u"{" + u",".join(str(k) + u" " + str(v) for k, v in self._shape._kvs.items()) + u"}"
+        acc = []
+        for k, v in self._shape._kvs.items():
+            acc.append(k.str_repr() + u" " + v.str_repr())
+
+        return u"{" + u",".join(acc) + u"}"
 
 
 class DictGetter(Getter):
@@ -212,6 +221,7 @@ class Keyword(Value):
 
     def __init__(self, ns, name, str_name):
         Value.__init__(self)
+        assert isinstance(str_name, unicode)
         self._ns_str = ns
         self._name_str = name
         self._str_name = str_name
@@ -234,10 +244,10 @@ class Keyword(Value):
     def py_name(self):
         return self._str_name.replace('.', '_').replace('/', '_').replace(':', '_')
 
-    def str_name(self):
+    def str_repr(self):
         return self._str_name
 
-    def __repr__(self):
+    def str_name(self):
         return self._str_name
 
     def ns_kw(self):
@@ -247,11 +257,11 @@ class Keyword(Value):
         return self._name_kw
 
     def _invoke(self, state, params):
-        assert 1 <= len(params) <= 2
-        if len(params) == 1:
-            return params[0].get_attr(self)
+        assert 1 <= params.argc() <= 2
+        if params.argc() == 1:
+            return params.arg(0).get_attr(self)
         else:
-            return params[0].get_attr(self, params[1])
+            return params.arg(0).get_attr(self, params.arg(1))
 
 
 
@@ -309,8 +319,8 @@ class Symbol(Value):
         Value.__init__(self)
         self._kw = kw
 
-    def __repr__(self):
-        return str(self._kw)[1:]
+    def str_repr(self):
+        return self._kw.str_repr()[1:]
 
     def get_shape(self):
         return self._shape
@@ -362,16 +372,29 @@ def to_list(lst):
         count += 1
     return acc
 
-def from_list(lst):
 
-    acc = []
+def to_arglist(lst):
+    from fae.vm.bootstrap.interpreter import ArgList
+    acc = ArgList(lst.get_attr(sized_size).unwrap_int())
 
+    idx = 0
     while lst.has_attr(list_head):
-        acc.append(lst.get_attr(list_head))
+        acc.set_arg(idx, lst.get_attr(list_head))
         lst = lst.get_attr(list_tail, eol)
+        idx += 1
 
     return acc
 
+def from_list(lst):
+    acc = [None] * lst.get_attr(sized_size).unwrap_int()
+
+    idx = 0
+    while lst.has_attr(list_head):
+        acc[idx] = lst.get_attr(list_head)
+        lst = lst.get_attr(list_tail, eol)
+        idx += 1
+
+    return acc
 
 class Integer(Value):
     _immutable_ = True
@@ -382,8 +405,8 @@ class Integer(Value):
         Value.__init__(self)
         self._i_val = i_val
 
-    def __str__(self):
-        return str(self._i_val)
+    def str_repr(self):
+        return unicode(str(self._i_val))
 
     def get_shape(self):
         return Integer._shape

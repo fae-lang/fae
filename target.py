@@ -18,8 +18,8 @@ def read_bootstrap():
 def bootstrap(input):
     e = Evaluator().add_global("fae.stdlib/*input*", Integer(input))
     for form in parsed:
-        print(form)
-        print("<>", str(e.top_eval(form)))
+        print(u"Eval:" + form.str_repr())
+        print(u"Result: " + e.top_eval(form).str_repr())
 
 
 def main(argv):
