@@ -137,6 +137,8 @@ class EvalInner(Fn):
 
         state = (globals, locals, handlers)
 
+        form = jit.promote(form)
+
         if form.has_attr(fae_symbol_value):
             return self.lookup_symbol(state, form.get_attr(fae_symbol_kw))
         elif form.has_attr(fae_keyword_value):
